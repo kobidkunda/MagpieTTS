@@ -25,4 +25,4 @@ def chunk_audio(audio: np.ndarray, sample_rate: int, chunk_ms: int = DEFAULT_CHU
 
 
 def audio_chunk_bytes(audio: np.ndarray) -> bytes:
-    return np.clip(audio, -1.0, 1.0).astype(np.int16).tobytes()
+    return (np.clip(audio, -1.0, 1.0) * 32767.0).astype(np.int16).tobytes()

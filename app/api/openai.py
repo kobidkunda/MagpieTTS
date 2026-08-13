@@ -93,7 +93,7 @@ async def _stream_response(req: OpenAISpeechRequest, stream_format: str, request
             audio = np.frombuffer(res["audio"], dtype=np.int16).astype(np.float32) / 32767.0
             chunks = chunk_audio(audio, rate, chunk_ms=200)
             if stream_format == "wav":
-                pcm = np.clip(audio, -1.0, 1.0).astype(np.int16).tobytes()
+                pcm = to_int16(audio).tobytes()
                 first = True
                 for c in chunks:
                     chunk = audio_chunk_bytes(c)
