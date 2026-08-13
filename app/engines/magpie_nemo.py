@@ -65,6 +65,105 @@ class MagpieNemoEngine(TTSEngine):
         F._magpie_dtype_shims_installed = True
         logger.info("installed dtype-alignment shims for reduced-precision inference")
 
+    @staticmethod
+    def _install_safe_sampling(model) -> None:
+        """Make Magpie's topk=1 sampling paths truly greedy and fp16-safe.
+
+        NeMo's EOS-detection probe calls ``sample_codes_from_logits`` with
+        ``topk=1``, but that method still runs ``softmax(logits / temperature)``
+        followed by ``torch.multinomial``. In fp16, large codec logits (or their
+        division by a tiny temperature) overflow to +inf / NaN, which
+        ``torch.multinomial`` rejects with a CUDA device-side assert, and a
+        garbage argmax can trigger premature EOS (truncated audio). With
+        ``topk=1`` there is exactly one surviving token, so a real ``argmax`` is
+        mathematically equivalent and removes ``softmax``/``multinomial`` from
+        the path entirely.
+
+        We also force ``sanitize_logits=True`` on the AR local-transformer
+        sampler (nan_to_num + clamp before sampling) to neutralise fp16
+        instability in the main generation logits.
+        """
+        from types import MethodType
+
+        import torch
+        from nemo.collections.tts.modules.magpietts_modules import clear_forbidden_logits
+
+        if getattr(model, "_magpie_safe_sampling_installed", False):
+            return
+
+        original = model.sample_codes_from_logits
+
+        def _safe_sample_codes_from_logits(
+            self,
+            all_code_logits_t,
+            temperature=0.7,
+            topk=80,
+            unfinished_items=None,
+            finished_items=None,
+            forbid_audio_eos=False,
+        ):
+            unfinished_items = unfinished_items or {}
+            finished_items = finished_items or {}
+
+            # Non-greedy paths keep NeMo's original behaviour.
+            if int(topk) != 1:
+                return original(
+                    all_code_logits_t,
+                    temperature=temperature,
+                    topk=topk,
+                    unfinished_items=unfinished_items,
+                    finished_items=finished_items,
+                    forbid_audio_eos=forbid_audio_eos,
+                )
+
+            all_preds = [[] for _ in range(self.frame_stacking_factor)]
+            for fs_index in range(self.frame_stacking_factor):
+                for idx in range(self.num_audio_codebooks):
+                    si = (idx + self.num_audio_codebooks * fs_index) * self.num_all_tokens_per_codebook
+                    ei = si + self.num_all_tokens_per_codebook
+                    logits = all_code_logits_t[:, si:ei].clone()
+
+                    # Sanitize in fp32 before applying any intentional -inf masks.
+                    logits = torch.nan_to_num(logits.float(), nan=0.0, posinf=100.0, neginf=-100.0)
+                    logits = logits.clamp(min=-100.0, max=100.0)
+
+                    for item_idx in unfinished_items:
+                        logits[item_idx, self.audio_eos_id] = float("-inf")
+                    for item_idx in finished_items:
+                        logits[item_idx, :] = float("-inf")
+                        logits[item_idx, self.audio_eos_id] = 0.0
+
+                    logits = clear_forbidden_logits(
+                        logits.unsqueeze(1), self.codebook_size, forbid_audio_eos=forbid_audio_eos
+                    ).squeeze(1)
+
+                    # True greedy: no softmax, no division, no multinomial.
+                    codebook_preds = torch.argmax(logits, dim=-1, keepdim=True).long()
+                    all_preds[fs_index].append(codebook_preds)
+
+            all_preds = [torch.cat(preds, dim=1) for preds in all_preds]
+            return torch.stack(all_preds, dim=2)
+
+        model.sample_codes_from_logits = MethodType(_safe_sample_codes_from_logits, model)
+
+        # Force sanitize_logits=True on the AR local-transformer sampler when the
+        # signature supports it.
+        lt = getattr(model, "_lt_helper", None)
+        if lt is not None and hasattr(lt, "sample_autoregressive"):
+            import inspect
+
+            original_ar = lt.sample_autoregressive
+            if "sanitize_logits" in inspect.signature(original_ar).parameters:
+
+                def _safe_ar(*args, **kwargs):
+                    kwargs["sanitize_logits"] = True
+                    return original_ar(*args, **kwargs)
+
+                lt.sample_autoregressive = _safe_ar
+
+        model._magpie_safe_sampling_installed = True
+        logger.info("installed safe greedy sampling (true-argmax EOS probe + sanitize_logits)")
+
     def load(self, model_path: str, precision: str, device: str = "cuda:0") -> None:
         """model_path may be a HF repo id or a local .nemo file."""
         with self._lock:
@@ -101,35 +200,21 @@ class MagpieNemoEngine(TTSEngine):
             # hallucinates long repeated audio; greedy keeps output bounded and
             # reproducible. See sample_autoregressive (temperature <= 0 -> argmax).
             #
-            # NOTE: temperature MUST stay <= 0.0. A small positive value (e.g.
-            # 0.01) routes sampling through softmax(logits / temperature) ->
-            # torch.multinomial; in fp16 logit / 0.01 can overflow to +inf and
-            # softmax then produces NaN, which multinomial rejects with a CUDA
-            # device-side assert ("probability tensor contains inf/nan").
-            # temperature <= 0 takes the argmax branch and never touches softmax.
+            # temperature stays <= 0.0: the AR local-transformer sampler maps
+            # temperature <= 0 to argmax directly, so a small positive value would
+            # route through softmax(logits / t) -> multinomial and overflow in fp16.
             #
-            # argmax_temperature feeds the EOS-detection probe (a separate
-            # sample_codes_from_logits call with topk=1). The NeMo default 0.01
-            # divides fp16 logits by 0.01, overflowing large logits to +inf ->
-            # NaN -> the same device-side assert (and garbage argmax -> premature
-            # EOS -> truncated audio). With topk=1 the probe is already a hard
-            # argmax, so the temperature value does not change the chosen token;
-            # 1.0 keeps the softmax numerically stable in fp16.
-            #
-            # ignore_finished_sentence_tracking=False enables NeMo's attention
-            # based sentence-completion tracking: once cross-attention reaches the
-            # end of the text it forces the audio EOS token. This is the reliable
-            # backstop against the occasional missed sampled-EOS token (fp16 CUDA
-            # kernels are nondeterministic), which otherwise runs to the
-            # max_decoder_steps ceiling and produces ~21s of looped audio.
+            # The EOS probe (sample_codes_from_logits, topk=1) is replaced by a
+            # true-argmax + fp32-sanitized implementation in
+            # _install_safe_sampling, which removes torch.multinomial from the
+            # topk=1 path entirely (the source of the device-side assert).
             try:
                 ip = model.inference_parameters
                 ip.temperature = 0.0
                 ip.topk = 1
                 ip.eos_detection_method = "argmax_any"
-                ip.argmax_temperature = 1.0
-                ip.ignore_finished_sentence_tracking = False
-                logger.info("inference: greedy decoding (temperature=0.0, topk=1, eos=argmax_any, argmax_temperature=1.0, sentence_tracking=enabled)")
+                ip.ignore_finished_sentence_tracking = True
+                logger.info("inference: greedy decoding (temperature=0.0, topk=1, eos=argmax_any, sentence_tracking=NeMo default)")
             except Exception as e:
                 logger.warning("could not set greedy inference params: %s", e)
             dtype = {"fp32": torch.float32, "fp16": torch.float16, "bf16": torch.bfloat16}.get(precision)
@@ -137,6 +222,7 @@ class MagpieNemoEngine(TTSEngine):
                 self._install_dtype_shims(torch)
                 model = model.to(dtype=dtype)
             model = model.to(device)
+            self._install_safe_sampling(model)
             self._model = model
             self._precision = precision
             self._device = device
@@ -149,6 +235,11 @@ class MagpieNemoEngine(TTSEngine):
                 self._model = None
                 torch.cuda.empty_cache()
                 logger.info("model unloaded, CUDA cache cleared")
+
+    @staticmethod
+    def _is_fatal_cuda_error(exc: BaseException) -> bool:
+        msg = str(exc).lower()
+        return "device-side assert" in msg or "cudaerrorassert" in msg
 
     def synthesize(self, text: str, language: str, speaker_index: int,
                    apply_tn: bool = True, use_cfg: bool = True, cfg_scale: float = 2.5,
@@ -169,6 +260,10 @@ class MagpieNemoEngine(TTSEngine):
             except Exception as e:
                 if cancel_event is not None and cancel_event.is_set():
                     raise RuntimeError("cancelled") from e
+                if self._is_fatal_cuda_error(e):
+                    logger.critical("fatal CUDA context error; terminating worker so systemd can reload it: %s", e)
+                    import os
+                    os._exit(70)
                 raise
             if hasattr(audio, "detach"):
                 audio = audio.detach().cpu()
