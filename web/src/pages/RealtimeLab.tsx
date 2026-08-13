@@ -107,12 +107,15 @@ export function RealtimeLab() {
     const ws = wsRef.current
     if (!ws) return
     if (ws.readyState !== WebSocket.OPEN) {
-      let opened = false
+      // Wait for the socket to open WITHOUT clobbering connect()'s onopen
+      // handler, which sends session.update (voice/language). Overwriting it
+      // here silently dropped session.update and left the server on the default
+      // language, making the model loop on non-English text.
       await new Promise<void>((resolve) => {
-        const t = setTimeout(() => resolve(), 5000)
-        ws.onopen = () => { opened = true; clearTimeout(t); resolve() }
+        const t = setTimeout(resolve, 5000)
+        ws.addEventListener('open', () => { clearTimeout(t); resolve() }, { once: true })
       })
-      if (!opened) {
+      if (wsRef.current?.readyState !== WebSocket.OPEN) {
         pushLog('•', 'websocket did not open')
         setStreaming(false)
         return

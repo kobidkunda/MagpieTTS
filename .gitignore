@@ -9,7 +9,6 @@ __pycache__/
 .venv/
 venv/
 env/
-dist/
 build/
 *.egg-info/
 
@@ -23,8 +22,8 @@ models/
 
 # --- Node / frontend ---
 web/node_modules/
-web/dist/
 *.tsbuildinfo
+# web/dist is committed so the FastAPI-served GUI works after a plain git pull.
 
 # --- Runtime data / logs ---
 data/
