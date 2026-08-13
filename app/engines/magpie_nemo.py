@@ -108,6 +108,14 @@ class MagpieNemoEngine(TTSEngine):
             # device-side assert ("probability tensor contains inf/nan").
             # temperature <= 0 takes the argmax branch and never touches softmax.
             #
+            # argmax_temperature feeds the EOS-detection probe (a separate
+            # sample_codes_from_logits call with topk=1). The NeMo default 0.01
+            # divides fp16 logits by 0.01, overflowing large logits to +inf ->
+            # NaN -> the same device-side assert (and garbage argmax -> premature
+            # EOS -> truncated audio). With topk=1 the probe is already a hard
+            # argmax, so the temperature value does not change the chosen token;
+            # 1.0 keeps the softmax numerically stable in fp16.
+            #
             # ignore_finished_sentence_tracking=False enables NeMo's attention
             # based sentence-completion tracking: once cross-attention reaches the
             # end of the text it forces the audio EOS token. This is the reliable
@@ -119,8 +127,9 @@ class MagpieNemoEngine(TTSEngine):
                 ip.temperature = 0.0
                 ip.topk = 1
                 ip.eos_detection_method = "argmax_any"
+                ip.argmax_temperature = 1.0
                 ip.ignore_finished_sentence_tracking = False
-                logger.info("inference: greedy decoding (temperature=0.0, topk=1, eos=argmax_any, sentence_tracking=enabled)")
+                logger.info("inference: greedy decoding (temperature=0.0, topk=1, eos=argmax_any, argmax_temperature=1.0, sentence_tracking=enabled)")
             except Exception as e:
                 logger.warning("could not set greedy inference params: %s", e)
             dtype = {"fp32": torch.float32, "fp16": torch.float16, "bf16": torch.bfloat16}.get(precision)
