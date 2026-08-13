@@ -101,6 +101,13 @@ class MagpieNemoEngine(TTSEngine):
             # hallucinates long repeated audio; greedy keeps output bounded and
             # reproducible. See sample_autoregressive (temperature <= 0 -> argmax).
             #
+            # NOTE: temperature MUST stay <= 0.0. A small positive value (e.g.
+            # 0.01) routes sampling through softmax(logits / temperature) ->
+            # torch.multinomial; in fp16 logit / 0.01 can overflow to +inf and
+            # softmax then produces NaN, which multinomial rejects with a CUDA
+            # device-side assert ("probability tensor contains inf/nan").
+            # temperature <= 0 takes the argmax branch and never touches softmax.
+            #
             # ignore_finished_sentence_tracking=False enables NeMo's attention
             # based sentence-completion tracking: once cross-attention reaches the
             # end of the text it forces the audio EOS token. This is the reliable
@@ -109,11 +116,11 @@ class MagpieNemoEngine(TTSEngine):
             # max_decoder_steps ceiling and produces ~21s of looped audio.
             try:
                 ip = model.inference_parameters
-                ip.temperature = 0.01
+                ip.temperature = 0.0
                 ip.topk = 1
                 ip.eos_detection_method = "argmax_any"
                 ip.ignore_finished_sentence_tracking = False
-                logger.info("inference: greedy decoding (temperature=0.01, topk=1, eos=argmax_any, sentence_tracking=enabled)")
+                logger.info("inference: greedy decoding (temperature=0.0, topk=1, eos=argmax_any, sentence_tracking=enabled)")
             except Exception as e:
                 logger.warning("could not set greedy inference params: %s", e)
             dtype = {"fp32": torch.float32, "fp16": torch.float16, "bf16": torch.bfloat16}.get(precision)
