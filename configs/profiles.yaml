@@ -1,0 +1,67 @@
+# Model precision profiles.
+# Only validated profiles may be loaded; never relabel fp16 as int8.
+
+profiles:
+  - id: fp32-reference
+    name: FP32 Reference
+    precision: fp32
+    description: Reference quality, highest VRAM and latency
+    status: ready
+
+  - id: fp16-realtime
+    name: FP16 Realtime
+    precision: fp16
+    description: Default production profile, low VRAM, fast
+    status: ready
+
+  - id: bf16
+    name: BF16
+    precision: bf16
+    description: Benchmarked, not assumed better
+    status: ready
+
+  - id: int8
+    name: INT8
+    precision: int8
+    description: Experimental - no validated artifact/runtime installed
+    status: missing
+
+  - id: int4
+    name: INT4
+    precision: int4
+    description: Experimental - no validated artifact/runtime installed
+    status: missing
+
+presets:
+  realtime:
+    profile: fp16-realtime
+    phrase:
+      min_words: 3
+      preferred_words: 6
+      max_words: 12
+      soft_timeout_ms: 120
+      hard_timeout_ms: 250
+    stream_format: pcm
+    priority: 0
+
+  balanced:
+    profile: fp16-realtime
+    phrase:
+      min_words: 5
+      preferred_words: 10
+      max_words: 18
+      soft_timeout_ms: 200
+      hard_timeout_ms: 400
+    stream_format: wav
+    priority: 10
+
+  reference:
+    profile: fp32-reference
+    phrase:
+      min_words: 0
+      preferred_words: 0
+      max_words: 0
+      soft_timeout_ms: 0
+      hard_timeout_ms: 0
+    stream_format: wav
+    priority: 30

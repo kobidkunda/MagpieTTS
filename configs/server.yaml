@@ -1,0 +1,70 @@
+# Magpie TTS Server configuration
+# Bind: 0.0.0.0:8092
+
+server:
+  host: 0.0.0.0
+  port: 8092
+  workers: 1
+  version: 1.0.0
+  name: magpie-tts-server
+
+model:
+  id: magpie-tts-multilingual-357m
+  revision: v2607
+  hf_repo: nvidia/magpie_tts_multilingual_357m
+  nemo_file: magpie_tts_multilingual_357m.nemo
+  codec_repo: nvidia/nemo-nano-codec-22khz-1.89kbps-21.5fps
+  codec_file: nemo_nano_codec_22khz_1.89kbps_21.5fps.nemo
+  speaker_map:
+    Aria: 0
+    Jason: 1
+    John: 2
+    Leo: 3
+    Sofia: 4
+  languages:
+    - ar
+    - zh
+    - en
+    - fr
+    - de
+    - hi
+    - it
+    - ja
+    - ko
+    - pt
+    - es
+    - vi
+
+runtime:
+  device: cuda:0
+  precision: fp16
+  batch_size: 1
+  default_sample_rate: 22050
+  max_input_chars: 5000
+  synth_timeout_seconds: 60
+  torch_compile: false
+  cfg_enabled: true
+  cfg_scale: 2.5
+
+scheduler:
+  max_queue: 32
+  realtime_priority: true
+  cancel_on_disconnect: true
+
+phrase:
+  min_words: 3
+  preferred_words: 8
+  max_words: 18
+  soft_timeout_ms: 120
+  hard_timeout_ms: 250
+  flush_punctuation: [".", "?", "!", ",", ";", ":", "\u0964", "\n"]
+
+audio:
+  formats: [pcm, wav, mp3, opus, flac, aac]
+  sample_rates: [8000, 16000, 22050, 24000, 48000]
+
+logging:
+  level: info
+  log_customer_text: false
+  max_log_bytes: 10485760
+  backups: 3

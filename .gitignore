@@ -1,0 +1,40 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+dist/
+build/
+*.egg-info/
+
+# --- Model checkpoints (large, download via scripts/download-model.sh) ---
+models/
+*.nemo
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# --- Node / frontend ---
+web/node_modules/
+web/dist/
+*.tsbuildinfo
+
+# --- Runtime data / logs ---
+data/
+*.log
+
+# --- IDE / OS ---
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# --- Local tooling ---
+.playwright-mcp/

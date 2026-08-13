@@ -1,0 +1,32 @@
+# Voice identities exposed by Magpie v2607 (speaker_index mapping in server.yaml).
+
+voices:
+  - id: aria
+    name: Aria
+    speaker_index: 0
+    gender: female
+    default: true
+
+  - id: jason
+    name: Jason
+    speaker_index: 1
+    gender: male
+    default: false
+
+  - id: john
+    name: John
+    speaker_index: 2
+    gender: male
+    default: false
+
+  - id: leo
+    name: Leo
+    speaker_index: 3
+    gender: male
+    default: false
+
+  - id: sofia
+    name: Sofia
+    speaker_index: 4
+    gender: female
+    default: false

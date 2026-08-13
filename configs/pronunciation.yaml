@@ -1,0 +1,33 @@
+# IPA pronunciation dictionary for MagpieTTS.
+# Surround the IPA string in '|' and add a space between each IPA character.
+
+entries:
+  - word: Biolastic
+    language: en
+    ipa: b aɪ oʊ l æ s t ɪ k
+    enabled: true
+
+  - word: GST
+    language: en
+    ipa: dʒ iː ɛ s t iː
+    enabled: true
+
+  - word: UPI
+    language: en
+    ipa: j uː p iː aɪ
+    enabled: true
+
+  - word: Siliguri
+    language: en
+    ipa: s ɪ l iː g ʊ r iː
+    enabled: true
+
+  - word: LiveKit
+    language: en
+    ipa: l aɪ v k ɪ t
+    enabled: true
+
+  - word: SKU
+    language: en
+    ipa: ɛ s k eɪ j uː
+    enabled: true

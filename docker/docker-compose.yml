@@ -1,0 +1,22 @@
+services:
+  magpie-tts:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: magpie-tts:latest
+    container_name: magpie-tts
+    restart: unless-stopped
+    ports:
+      - "8092:8092"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - ./../models:/srv/magpie/models
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - NVIDIA_VISIBLE_DEVICES=all

@@ -1,0 +1,17 @@
+# Magpie TTS Server runtime dependencies.
+# Install torch FIRST (CUDA build) — see scripts/install.sh.
+# torch==2.7.*  (cu128 wheels work with CUDA 13.0 drivers)
+fastapi>=0.115
+uvicorn[standard]>=0.32
+pydantic>=2.9
+PyYAML>=6.0
+numpy<2.3
+httpx>=0.27
+huggingface_hub>=0.26
+soundfile>=0.12
+nvidia-ml-py>=12.560
+# NeMo Speech toolkit (MagpieTTSModel):
+# pip install nemo_toolkit[tts]@main
+# Optional transcoding (mp3/opus/flac/aac):
+# av>=13.1   (PyAV)
+# or system ffmpeg

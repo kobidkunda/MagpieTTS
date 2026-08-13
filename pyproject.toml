@@ -1,0 +1,16 @@
+[project]
+name = "magpie-tts-server"
+version = "1.0.0"
+description = "Standalone Magpie 357M multilingual realtime TTS API server (0.0.0.0:8092)"
+readme = "README.md"
+requires-python = ">=3.10.12"
+license = { text = "Apache-2.0" }
+
+[project.scripts]
+magpie-tts = "app.main:main"
+
+[tool.setuptools]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
